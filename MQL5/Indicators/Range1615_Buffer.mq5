@@ -175,7 +175,11 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    //--- grafico ridimensionato: riposiziona subito il box con l'ultimo contenuto
    if(id == CHARTEVENT_CHART_CHANGE && ArraySize(g_panelLines) > 0)
      {
-      RenderPanel(g_panelLines, g_panelColors);
+      string lines[];
+      color  colors[];
+      ArrayCopy(lines, g_panelLines);
+      ArrayCopy(colors, g_panelColors);
+      RenderPanel(lines, colors);
       ChartRedraw();
      }
   }
