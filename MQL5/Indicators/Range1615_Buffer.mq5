@@ -3,7 +3,7 @@
 //|  Range Max/Min 16:15-16:30, linee buffer, target 2.5x e size     |
 //+------------------------------------------------------------------+
 #property copyright   "AnyPS5"
-#property version     "1.00"
+#property version     "1.10"
 #property description "RangeBreak - Calcola Max/Min tra 16:15 e 16:30, disegna le linee buffer (+/- 10),"
 #property description "la linea target a 2.5x il range e un box con la size per rischiare 20 USD"
 #property description "(rischio = distanza tra buffer superiore e buffer inferiore)."
@@ -74,7 +74,6 @@ input color            InpPanelSize    = clrLime;       // Box: colore size
 int g_startSec = 0;
 int g_endSec   = 0;
 int g_linesSec = 0;
-string g_daysKey = "";
 
 //--- esito del breakout di un giorno
 #define RES_NONE 0   // nessun buffer toccato
@@ -92,10 +91,10 @@ struct DayData
    int               dir;     // +1 long (buffer +), -1 short (buffer -)
    datetime          tIn;
    datetime          tOut;
-   bool              done;    // niente piu' da ricalcolare
   };
 
-DayData g_cache[];            // giorni chiusi gia' calcolati
+DayData  g_prev[];            // ultimo stato disegnato, per ridisegnare solo cio' che cambia
+uint     g_lastCalc = 0;
 
 //+------------------------------------------------------------------+
 int ParseHHMM(const string s, const int def)
@@ -135,6 +134,7 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
      }
    IndicatorSetString(INDICATOR_SHORTNAME, "RangeBreak");
+   Print("RangeBreak v1.10 caricato su ", _Symbol);
    EventSetTimer(1);
    Update();
    return INIT_SUCCEEDED;
@@ -183,15 +183,10 @@ datetime LinesEnd(const datetime day)
   }
 
 //+------------------------------------------------------------------+
-bool FindCached(const datetime day, DayData &out)
+bool SameDay(const DayData &a, const DayData &b)
   {
-   for(int i = 0; i < ArraySize(g_cache); i++)
-      if(g_cache[i].day == day)
-        {
-         out = g_cache[i];
-         return true;
-        }
-   return false;
+   return a.day == b.day && a.hi == b.hi && a.lo == b.lo && a.forming == b.forming
+          && a.res == b.res && a.dir == b.dir && a.tIn == b.tIn && a.tOut == b.tOut;
   }
 
 //+------------------------------------------------------------------+
@@ -272,17 +267,17 @@ bool ComputeDay(const datetime day, const datetime now, DayData &dd)
    dd.dir     = 0;
    dd.tIn     = 0;
    dd.tOut    = 0;
-   dd.done   = false;
 
-   if(!dd.forming && EvalTrade(dd, now))
-      dd.done = (dd.res == RES_WIN || dd.res == RES_LOSS || now >= LinesEnd(day));
+   if(!dd.forming)
+      EvalTrade(dd, now);
    return true;
   }
 
 //+------------------------------------------------------------------+
 void PrintResult(const DayData &dd)
   {
-   string res = (dd.res == RES_WIN) ? "TP" : (dd.res == RES_LOSS) ? "STOP" : "nessun breakout";
+   string res = (dd.res == RES_WIN) ? "TP" : (dd.res == RES_LOSS) ? "STOP" :
+                (dd.res == RES_OPEN) ? "in corso" : dd.forming ? "range in formazione" : "nessun breakout";
    string dir = (dd.dir > 0) ? "LONG " : (dd.dir < 0) ? "SHORT " : "";
    PrintFormat("RangeBreak %s  Max %s  Min %s  -> %s%s",
                TimeToString(dd.day, TIME_DATE), DoubleToString(dd.hi, _Digits),
@@ -294,9 +289,14 @@ void PrintResult(const DayData &dd)
 //+------------------------------------------------------------------+
 void Update()
   {
+   //--- ricalcolo completo al massimo ogni 2 secondi
+   uint tick = GetTickCount();
+   if(g_lastCalc != 0 && tick - g_lastCalc < 2000)
+      return;
+   g_lastCalc = tick;
+
    datetime now = TimeTradeServer();
    DayData  list[];
-   bool     cached[];
    int      found = 0;
 
    for(int k = 0; k < InpDays + 15 && found < InpDays; k++)
@@ -304,44 +304,35 @@ void Update()
       datetime d1 = iTime(_Symbol, PERIOD_D1, k);
       if(d1 == 0)
          break;
-      datetime day = d1 - (d1 % 86400);
-      DayData  dd;
-      bool     fromCache = FindCached(day, dd);
-      if(!fromCache && !ComputeDay(day, now, dd))
+      DayData dd;
+      if(!ComputeDay(d1 - (d1 % 86400), now, dd))
          continue;
       ArrayResize(list, found + 1);
-      ArrayResize(cached, found + 1);
-      if(!fromCache && dd.done)
-         PrintResult(dd);
-      list[found]   = dd;
-      cached[found] = fromCache;
+      list[found] = dd;
       found++;
      }
 
-   //--- tiene in cache solo i giorni chiusi ancora visibili
-   ArrayResize(g_cache, 0);
-   for(int i = 0; i < found; i++)
-      if(list[i].done)
-        {
-         int c = ArraySize(g_cache);
-         ArrayResize(g_cache, c + 1);
-         g_cache[c] = list[i];
-        }
-
    //--- se l'insieme dei giorni e' cambiato, elimina e ridisegna tutto
-   string key = "";
-   for(int i = 0; i < found; i++)
-      key += TimeToString(list[i].day, TIME_DATE) + ";";
-   bool redrawAll = (key != g_daysKey);
+   bool redrawAll = (ArraySize(g_prev) != found);
+   for(int i = 0; i < found && !redrawAll; i++)
+      redrawAll = (g_prev[i].day != list[i].day);
    if(redrawAll)
-     {
       ObjectsDeleteAll(0, PREFIX + "D");
-      g_daysKey = key;
-     }
 
    for(int i = 0; i < found; i++)
-      if(redrawAll || !cached[i])
+      if(redrawAll || !SameDay(g_prev[i], list[i]))
+        {
          DrawDay(list[i]);
+         if(!redrawAll && list[i].res != g_prev[i].res)
+            PrintResult(list[i]);
+        }
+   if(redrawAll)
+      for(int i = found - 1; i >= 0; i--)
+         PrintResult(list[i]);
+
+   ArrayResize(g_prev, found);
+   for(int i = 0; i < found; i++)
+      g_prev[i] = list[i];
 
    if(found > 0)
       DrawPanel(list[0].hi, list[0].lo, list[0].forming);
@@ -396,18 +387,18 @@ void DrawDay(const DayData &dd)
 
    SetRect(tag + "box", start, hi, end, lo, InpColBox);
 
-   SetLine(tag + "hi", start, lineEnd, hi, InpColHighLow, STYLE_SOLID, 1, "Max", true, false);
-   SetLine(tag + "lo", start, lineEnd, lo, InpColHighLow, STYLE_SOLID, 1, "Min", true, true);
-   SetLine(tag + "bufUp", start, lineEnd, bufUp, InpColBuffer, STYLE_DASH, 2, "Buffer +", false, false);
-   SetLine(tag + "bufDn", start, lineEnd, bufDn, InpColBuffer, STYLE_DASH, 2, "Buffer -", false, true);
+   SetLine(tag + "hi", start, lineEnd, hi, InpColHighLow, STYLE_SOLID, 1, "");
+   SetLine(tag + "lo", start, lineEnd, lo, InpColHighLow, STYLE_SOLID, 1, "");
+   SetLine(tag + "bufUp", start, lineEnd, bufUp, InpColBuffer, STYLE_DASH, 2, "");
+   SetLine(tag + "bufDn", start, lineEnd, bufDn, InpColBuffer, STYLE_DASH, 2, "");
 
    string tgtName = "Target " + DoubleToString(InpTargetMult, 1) + "x";
    if(InpShowTargetUp)
-      SetLine(tag + "tgtUp", start, lineEnd, tgtUp, InpColTarget, STYLE_DOT, 1, tgtName + " +", false, false);
+      SetLine(tag + "tgtUp", start, lineEnd, tgtUp, InpColTarget, STYLE_DOT, 1, tgtName + " +");
    else
       DeleteLine(tag + "tgtUp");
    if(InpShowTargetDn)
-      SetLine(tag + "tgtDn", start, lineEnd, tgtDn, InpColTarget, STYLE_DOT, 1, tgtName + " -", false, true);
+      SetLine(tag + "tgtDn", start, lineEnd, tgtDn, InpColTarget, STYLE_DOT, 1, tgtName + " -", true);
    else
       DeleteLine(tag + "tgtDn");
   }
@@ -416,14 +407,15 @@ void DrawDay(const DayData &dd)
 void SetRect(const string name, const datetime t1, const double p1,
              const datetime t2, const double p2, const color clr)
   {
-   if(ObjectFind(0, name) < 0)
+   if(ObjectFind(0, name) < 0 && !ObjectCreate(0, name, OBJ_RECTANGLE, 0, t1, p1, t2, p2))
      {
-      ObjectCreate(0, name, OBJ_RECTANGLE, 0, t1, p1, t2, p2);
-      ObjectSetInteger(0, name, OBJPROP_FILL, true);
-      ObjectSetInteger(0, name, OBJPROP_BACK, true);
-      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
-      ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+      Print("RangeBreak: impossibile creare ", name, " errore ", GetLastError());
+      return;
      }
+   ObjectSetInteger(0, name, OBJPROP_FILL, true);
+   ObjectSetInteger(0, name, OBJPROP_BACK, true);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
    ObjectMove(0, name, 0, t1, p1);
    ObjectMove(0, name, 1, t2, p2);
@@ -431,10 +423,12 @@ void SetRect(const string name, const datetime t1, const double p1,
 
 //+------------------------------------------------------------------+
 void SetLine(const string name, const datetime t1, const datetime t2, const double price,
-             const color clr, const ENUM_LINE_STYLE style, const int width, const string text,
-             const bool labelAtStart, const bool labelBelow)
+             const color clr, const ENUM_LINE_STYLE style, const int width,
+             const string text, const bool labelBelow = false)
   {
-   string txt = text + "  " + DoubleToString(price, _Digits);
+   string txt = DoubleToString(price, _Digits);
+   if(text != "")
+      txt = text + "  " + txt;
    if(ObjectFind(0, name) < 0)
      {
       ObjectCreate(0, name, OBJ_TREND, 0, t1, price, t2, price);
@@ -450,7 +444,13 @@ void SetLine(const string name, const datetime t1, const datetime t2, const doub
    ObjectMove(0, name, 0, t1, price);
    ObjectMove(0, name, 1, t2, price);
 
+   //--- etichetta solo se c'e' un testo (le linee Max/Min/Buffer non ne hanno)
    string lbl = name + "_txt";
+   if(text == "")
+     {
+      ObjectDelete(0, lbl);
+      return;
+     }
    if(ObjectFind(0, lbl) < 0)
      {
       ObjectCreate(0, lbl, OBJ_TEXT, 0, t2, price);
@@ -460,9 +460,8 @@ void SetLine(const string name, const datetime t1, const datetime t2, const doub
      }
    ObjectSetInteger(0, lbl, OBJPROP_COLOR, clr);
    ObjectSetString(0, lbl, OBJPROP_TEXT, txt);
-   //--- Max/Min a sinistra dell'inizio, buffer/target a destra; sotto la linea quelli inferiori
    ObjectSetInteger(0, lbl, OBJPROP_ANCHOR, labelBelow ? ANCHOR_RIGHT_UPPER : ANCHOR_RIGHT_LOWER);
-   ObjectMove(0, lbl, 0, labelAtStart ? t1 : t2, price);
+   ObjectMove(0, lbl, 0, t2, price);
   }
 
 //+------------------------------------------------------------------+
