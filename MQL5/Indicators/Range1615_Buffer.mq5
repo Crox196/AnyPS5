@@ -344,23 +344,44 @@ void Update()
    for(int i = 0; i < found; i++)
       g_prev[i] = list[i];
 
-   //--- TP e stop del mese corrente
-   MqlDateTime nowDt, dayDt;
-   TimeToStruct(now, nowDt);
-   int monthTp = 0, monthSl = 0;
+   //--- TP e stop per ogni mese calcolato (dal piu' recente)
+   int    monthKey[];
+   int    monthTp[];
+   int    monthSl[];
+   string monthRows[];
+   int    months = 0;
    for(int i = 0; i < found; i++)
      {
-      TimeToStruct(list[i].day, dayDt);
-      if(dayDt.year != nowDt.year || dayDt.mon != nowDt.mon)
-         continue;
+      MqlDateTime dt;
+      TimeToStruct(list[i].day, dt);
+      int key = dt.year * 100 + dt.mon;
+      if(months == 0 || monthKey[months - 1] != key)
+        {
+         months++;
+         ArrayResize(monthKey, months);
+         ArrayResize(monthTp, months);
+         ArrayResize(monthSl, months);
+         monthKey[months - 1] = key;
+         monthTp[months - 1]  = 0;
+         monthSl[months - 1]  = 0;
+        }
       if(list[i].res == RES_WIN)
-         monthTp++;
+         monthTp[months - 1]++;
       else if(list[i].res == RES_LOSS)
-         monthSl++;
+         monthSl[months - 1]++;
+     }
+   ArrayResize(monthRows, months);
+   for(int m = 0; m < months; m++)
+     {
+      monthRows[m] = MonthName(monthKey[m] % 100) + " " + IntegerToString(monthKey[m] / 100) + ": "
+                     + IntegerToString(monthTp[m]) + " TP / " + IntegerToString(monthSl[m]) + " Stop";
+      //--- il mese piu' vecchio e' incompleto se i giorni mostrati non arrivano al suo inizio
+      if(m == months - 1 && found >= InpDays && months > 1)
+         monthRows[m] += " (parziale)";
      }
 
    if(found > 0)
-      DrawPanel(list[0].hi, list[0].lo, list[0].forming, MonthName(nowDt.mon), monthTp, monthSl);
+      DrawPanel(list[0].hi, list[0].lo, list[0].forming, monthRows);
    else
       DrawPanelEmpty();
    ChartRedraw();
@@ -531,8 +552,7 @@ int VolumeDigits(const double step)
   }
 
 //+------------------------------------------------------------------+
-void DrawPanel(const double hi, const double lo, const bool forming,
-               const string month, const int monthTp, const int monthSl)
+void DrawPanel(const double hi, const double lo, const bool forming, const string &monthRows[])
   {
    double bufUp, bufDn, tgtUp, tgtDn;
    CalcLevels(hi, lo, bufUp, bufDn, tgtUp, tgtDn);
@@ -580,8 +600,8 @@ void DrawPanel(const double hi, const double lo, const bool forming,
    AddRow(lines, colors, "Range: " + DoubleToString(hi - lo, _Digits) + (forming ? " (in formazione)" : ""), InpPanelText);
    AddRow(lines, colors, sizeTxt, sizeClr);
    AddRow(lines, colors, riskTxt, InpPanelText);
-   AddRow(lines, colors, month + ": " + IntegerToString(monthTp) + " TP / " + IntegerToString(monthSl) + " Stop",
-          InpPanelText);
+   for(int m = 0; m < ArraySize(monthRows); m++)
+      AddRow(lines, colors, monthRows[m], InpPanelText);
 
    RenderPanel(lines, colors);
   }
@@ -655,7 +675,7 @@ void RenderPanel(const string &lines[], const color &colors[])
      }
 
    //--- rimuove righe avanzate da un disegno precedente
-   for(int i = rows; i < 30; i++)
+   for(int i = rows; i < 60; i++)
       ObjectDelete(0, PREFIX + "panel_row" + IntegerToString(i));
   }
 //+------------------------------------------------------------------+
