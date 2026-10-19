@@ -64,7 +64,7 @@ input color            InpColTarget    = clrGold;       // Colore target
 input color            InpColBox       = C'40,40,60';   // Colore rettangolo range
 input bool             InpPanelRight   = true;          // Box a destra (false = a sinistra)
 input int              InpPanelX       = 10;            // Box: distanza dal bordo
-input int              InpPanelY       = 25;            // Box: distanza Y
+input int              InpPanelY       = 10;            // Box: distanza Y
 input int              InpFontSize     = 10;            // Box: dimensione font
 input color            InpPanelBg      = C'25,25,35';   // Box: sfondo
 input color            InpPanelText    = clrWhite;      // Box: testo
