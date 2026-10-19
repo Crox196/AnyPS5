@@ -92,7 +92,7 @@ struct DayData
    int               dir;     // +1 long (buffer +), -1 short (buffer -)
    datetime          tIn;
    datetime          tOut;
-   bool              final;   // niente piu' da ricalcolare
+   bool              done;    // niente piu' da ricalcolare
   };
 
 DayData g_cache[];            // giorni chiusi gia' calcolati
@@ -272,10 +272,10 @@ bool ComputeDay(const datetime day, const datetime now, DayData &dd)
    dd.dir     = 0;
    dd.tIn     = 0;
    dd.tOut    = 0;
-   dd.final   = false;
+   dd.done   = false;
 
    if(!dd.forming && EvalTrade(dd, now))
-      dd.final = (dd.res == RES_WIN || dd.res == RES_LOSS || now >= LinesEnd(day));
+      dd.done = (dd.res == RES_WIN || dd.res == RES_LOSS || now >= LinesEnd(day));
    return true;
   }
 
@@ -309,7 +309,7 @@ void Update()
    //--- tiene in cache solo i giorni chiusi ancora visibili
    ArrayResize(g_cache, 0);
    for(int i = 0; i < found; i++)
-      if(list[i].final)
+      if(list[i].done)
         {
          int c = ArraySize(g_cache);
          ArrayResize(g_cache, c + 1);
