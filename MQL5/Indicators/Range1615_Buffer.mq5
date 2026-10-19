@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "AnyPS5"
 #property version     "1.00"
-#property description "Calcola Max/Min tra 16:15 e 16:30, disegna le linee buffer (+/- 10),"
+#property description "RangeBreak - Calcola Max/Min tra 16:15 e 16:30, disegna le linee buffer (+/- 10),"
 #property description "la linea target a 2.5x il range e un box con la size per rischiare 20 USD"
 #property description "(rischio = distanza tra buffer superiore e buffer inferiore)."
 #property indicator_chart_window
@@ -54,7 +54,10 @@ input group "Rischio"
 input double           InpRisk         = 20.0;          // Rischio per trade (valuta del conto)
 
 input group "Grafica"
-input int              InpDays         = 5;             // Giorni da mostrare (oggi + precedenti)
+input int              InpDays         = 95;            // Giorni da mostrare (oggi + precedenti)
+input bool             InpShowResults  = true;          // Colora esito breakout (verde TP / rosso stop)
+input color            InpColWin       = C'0,110,0';    // Colore esito TP
+input color            InpColLoss      = C'140,0,0';    // Colore esito stop
 input color            InpColHighLow   = clrSilver;     // Colore Max/Min
 input color            InpColBuffer    = clrDodgerBlue; // Colore buffer
 input color            InpColTarget    = clrGold;       // Colore target
@@ -72,6 +75,27 @@ int g_startSec = 0;
 int g_endSec   = 0;
 int g_linesSec = 0;
 string g_daysKey = "";
+
+//--- esito del breakout di un giorno
+#define RES_NONE 0   // nessun buffer toccato
+#define RES_WIN  1   // target raggiunto prima dello stop
+#define RES_LOSS 2   // stop preso, o target non raggiunto entro fine linee
+#define RES_OPEN 3   // trade ancora in corso
+
+struct DayData
+  {
+   datetime          day;
+   double            hi;
+   double            lo;
+   bool              forming;
+   int               res;
+   int               dir;     // +1 long (buffer +), -1 short (buffer -)
+   datetime          tIn;
+   datetime          tOut;
+   bool              final;   // niente piu' da ricalcolare
+  };
+
+DayData g_cache[];            // giorni chiusi gia' calcolati
 
 //+------------------------------------------------------------------+
 int ParseHHMM(const string s, const int def)
@@ -110,6 +134,7 @@ int OnInit()
       Print("Orario di fine range deve essere dopo l'orario di inizio");
       return INIT_PARAMETERS_INCORRECT;
      }
+   IndicatorSetString(INDICATOR_SHORTNAME, "RangeBreak");
    EventSetTimer(1);
    Update();
    return INIT_SUCCEEDED;
@@ -146,73 +171,169 @@ void OnTimer()
   }
 
 //+------------------------------------------------------------------+
+datetime RangeStart(const datetime day) { return day + g_startSec + InpTimeShift * 3600; }
+datetime RangeEnd(const datetime day)   { return day + g_endSec + InpTimeShift * 3600; }
+
+datetime LinesEnd(const datetime day)
+  {
+   datetime t = day + g_linesSec + InpTimeShift * 3600;
+   if(t <= RangeEnd(day))
+      t += 86400;
+   return t;
+  }
+
+//+------------------------------------------------------------------+
+bool FindCached(const datetime day, DayData &out)
+  {
+   for(int i = 0; i < ArraySize(g_cache); i++)
+      if(g_cache[i].day == day)
+        {
+         out = g_cache[i];
+         return true;
+        }
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+//| Simula il breakout: primo buffer toccato = entrata, stop = buffer |
+//| opposto, TP = target. Se TP e stop sono nella stessa candela M1   |
+//| conta come stop.                                                   |
+//+------------------------------------------------------------------+
+bool EvalTrade(DayData &dd, const datetime now)
+  {
+   double bufUp, bufDn, tgtUp, tgtDn;
+   CalcLevels(dd.hi, dd.lo, bufUp, bufDn, tgtUp, tgtDn);
+   datetime lineEnd = LinesEnd(dd.day);
+
+   MqlRates r[];
+   int n = CopyRates(_Symbol, PERIOD_M1, RangeEnd(dd.day), lineEnd - 1, r);
+   if(n < 0)
+      return false;
+
+   for(int i = 0; i < n; i++)
+     {
+      if(dd.dir == 0)
+        {
+         bool up = (r[i].high >= bufUp);
+         bool dn = (r[i].low <= bufDn);
+         if(!up && !dn)
+            continue;
+         if(up && dn)
+            dd.dir = (MathAbs(r[i].open - bufUp) <= MathAbs(r[i].open - bufDn)) ? 1 : -1;
+         else
+            dd.dir = up ? 1 : -1;
+         dd.tIn = r[i].time;
+        }
+      bool sl = (dd.dir > 0) ? (r[i].low <= bufDn) : (r[i].high >= bufUp);
+      bool tp = (dd.dir > 0) ? (r[i].high >= tgtUp) : (r[i].low <= tgtDn);
+      if(sl || tp)
+        {
+         dd.res  = sl ? RES_LOSS : RES_WIN;
+         dd.tOut = r[i].time + 60;
+         return true;
+        }
+     }
+
+   if(dd.dir == 0)
+      dd.res = RES_NONE;
+   else if(now >= lineEnd)
+     {
+      dd.res  = RES_LOSS;
+      dd.tOut = lineEnd;
+     }
+   else
+      dd.res = RES_OPEN;
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+bool ComputeDay(const datetime day, const datetime now, DayData &dd)
+  {
+   datetime start = RangeStart(day);
+   datetime end   = RangeEnd(day);
+   if(now < start)
+      return false;                      // range non ancora iniziato
+
+   MqlRates rates[];
+   int n = CopyRates(_Symbol, PERIOD_M1, start, end - 1, rates);
+   if(n <= 0)
+      return false;                      // nessun dato (festivo o storico M1 non caricato)
+
+   dd.hi = rates[0].high;
+   dd.lo = rates[0].low;
+   for(int i = 1; i < n; i++)
+     {
+      dd.hi = MathMax(dd.hi, rates[i].high);
+      dd.lo = MathMin(dd.lo, rates[i].low);
+     }
+   dd.day     = day;
+   dd.forming = (now < end);
+   dd.res     = RES_NONE;
+   dd.dir     = 0;
+   dd.tIn     = 0;
+   dd.tOut    = 0;
+   dd.final   = false;
+
+   if(!dd.forming && EvalTrade(dd, now))
+      dd.final = (dd.res == RES_WIN || dd.res == RES_LOSS || now >= LinesEnd(day));
+   return true;
+  }
+
+//+------------------------------------------------------------------+
 //| Disegna range e linee per gli ultimi InpDays giorni               |
 //+------------------------------------------------------------------+
 void Update()
   {
-   datetime now   = TimeTradeServer();
-   datetime today = now - (now % 86400);
+   datetime now = TimeTradeServer();
+   DayData  list[];
+   bool     cached[];
    int      found = 0;
-   bool     panelDone = false;
-   datetime days[];
-   double   his[], los[];
-   bool     forms[];
 
-   for(int d = 0; d < InpDays * 3 + 7 && found < InpDays; d++)
+   for(int k = 0; k < InpDays + 15 && found < InpDays; k++)
      {
-      datetime day   = today - d * 86400;
-      datetime start = day + g_startSec + InpTimeShift * 3600;
-      datetime end   = day + g_endSec + InpTimeShift * 3600;
-      if(now < start)
-         continue;                       // range di oggi non ancora iniziato
-
-      MqlRates rates[];
-      int n = CopyRates(_Symbol, PERIOD_M1, start, end - 1, rates);
-      if(n <= 0)
-         continue;                       // nessun dato (weekend/festivo o storico M1 non caricato)
-
-      double hi = rates[0].high;
-      double lo = rates[0].low;
-      for(int i = 1; i < n; i++)
-        {
-         hi = MathMax(hi, rates[i].high);
-         lo = MathMin(lo, rates[i].low);
-        }
-
-      ArrayResize(days, found + 1);
-      ArrayResize(his, found + 1);
-      ArrayResize(los, found + 1);
-      ArrayResize(forms, found + 1);
-      days[found]  = day;
-      his[found]   = hi;
-      los[found]   = lo;
-      forms[found] = (now < end);
+      datetime d1 = iTime(_Symbol, PERIOD_D1, k);
+      if(d1 == 0)
+         break;
+      datetime day = d1 - (d1 % 86400);
+      DayData  dd;
+      bool     fromCache = FindCached(day, dd);
+      if(!fromCache && !ComputeDay(day, now, dd))
+         continue;
+      ArrayResize(list, found + 1);
+      ArrayResize(cached, found + 1);
+      list[found]   = dd;
+      cached[found] = fromCache;
       found++;
      }
 
-   //--- se l'insieme dei giorni e' cambiato, elimina le linee dei giorni vecchi
+   //--- tiene in cache solo i giorni chiusi ancora visibili
+   ArrayResize(g_cache, 0);
+   for(int i = 0; i < found; i++)
+      if(list[i].final)
+        {
+         int c = ArraySize(g_cache);
+         ArrayResize(g_cache, c + 1);
+         g_cache[c] = list[i];
+        }
+
+   //--- se l'insieme dei giorni e' cambiato, elimina e ridisegna tutto
    string key = "";
    for(int i = 0; i < found; i++)
-      key += TimeToString(days[i], TIME_DATE) + ";";
-   if(key != g_daysKey)
+      key += TimeToString(list[i].day, TIME_DATE) + ";";
+   bool redrawAll = (key != g_daysKey);
+   if(redrawAll)
      {
       ObjectsDeleteAll(0, PREFIX + "D");
       g_daysKey = key;
      }
 
    for(int i = 0; i < found; i++)
-     {
-      datetime start = days[i] + g_startSec + InpTimeShift * 3600;
-      datetime end   = days[i] + g_endSec + InpTimeShift * 3600;
-      DrawDay(days[i], start, end, his[i], los[i], forms[i]);
-      if(!panelDone)
-        {
-         DrawPanel(days[i], his[i], los[i], forms[i]);
-         panelDone = true;
-        }
-     }
+      if(redrawAll || !cached[i])
+         DrawDay(list[i]);
 
-   if(!panelDone)
+   if(found > 0)
+      DrawPanel(list[0].hi, list[0].lo, list[0].forming);
+   else
       DrawPanelEmpty();
    ChartRedraw();
   }
@@ -240,16 +361,26 @@ void CalcLevels(const double hi, const double lo,
   }
 
 //+------------------------------------------------------------------+
-void DrawDay(const datetime day, const datetime start, const datetime end,
-             const double hi, const double lo, const bool forming)
+void DrawDay(const DayData &dd)
   {
-   string   tag     = PREFIX + "D" + TimeToString(day, TIME_DATE) + "_";
-   datetime lineEnd = day + g_linesSec + InpTimeShift * 3600;
-   if(lineEnd <= end)
-      lineEnd += 86400;
+   string   tag     = PREFIX + "D" + TimeToString(dd.day, TIME_DATE) + "_";
+   datetime start   = RangeStart(dd.day);
+   datetime end     = RangeEnd(dd.day);
+   datetime lineEnd = LinesEnd(dd.day);
+   double   hi      = dd.hi;
+   double   lo      = dd.lo;
 
    double bufUp, bufDn, tgtUp, tgtDn;
    CalcLevels(hi, lo, bufUp, bufDn, tgtUp, tgtDn);
+
+   //--- esito: rettangolo dal buffer di entrata al target
+   string resName = tag + "res";
+   if(InpShowResults && (dd.res == RES_WIN || dd.res == RES_LOSS))
+      SetRect(resName, dd.tIn, (dd.dir > 0) ? bufUp : bufDn,
+              dd.tOut, (dd.dir > 0) ? tgtUp : tgtDn,
+              (dd.res == RES_WIN) ? InpColWin : InpColLoss);
+   else
+      ObjectDelete(0, resName);
 
    SetRect(tag + "box", start, hi, end, lo, InpColBox);
 
@@ -361,7 +492,7 @@ int VolumeDigits(const double step)
   }
 
 //+------------------------------------------------------------------+
-void DrawPanel(const datetime day, const double hi, const double lo, const bool forming)
+void DrawPanel(const double hi, const double lo, const bool forming)
   {
    double bufUp, bufDn, tgtUp, tgtDn;
    CalcLevels(hi, lo, bufUp, bufDn, tgtUp, tgtDn);
@@ -404,6 +535,7 @@ void DrawPanel(const datetime day, const double hi, const double lo, const bool 
 
    string lines[];
    color  colors[];
+   AddRow(lines, colors, "RangeBreak", clrGold);
    AddRow(lines, colors, "Rischio: " + DoubleToString(InpRisk, 2) + " " + cur, InpPanelText);
    AddRow(lines, colors, "Range: " + DoubleToString(hi - lo, _Digits) + (forming ? " (in formazione)" : ""), InpPanelText);
    AddRow(lines, colors, sizeTxt, sizeClr);
@@ -417,6 +549,7 @@ void DrawPanelEmpty()
   {
    string lines[];
    color  colors[];
+   AddRow(lines, colors, "RangeBreak", clrGold);
    AddRow(lines, colors, "Rischio: " + DoubleToString(InpRisk, 2) + " " + AccountInfoString(ACCOUNT_CURRENCY), InpPanelText);
    AddRow(lines, colors, "Range: n.d. (nessun dato M1)", InpPanelText);
    RenderPanel(lines, colors);
