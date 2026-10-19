@@ -276,6 +276,12 @@ bool ComputeDay(const datetime day, const datetime now, DayData &dd)
   }
 
 //+------------------------------------------------------------------+
+string FormatPnl(const double v)
+  {
+   return (v > 0.0 ? "+" : "") + DoubleToString(v, 2);
+  }
+
+//+------------------------------------------------------------------+
 string MonthName(const int mon)
   {
    static const string names[12] = {"Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
@@ -370,15 +376,23 @@ void Update()
       else if(list[i].res == RES_LOSS)
          monthSl[months - 1]++;
      }
-   ArrayResize(monthRows, months);
+   //--- risultato: ogni TP vale rischio * moltiplicatore, ogni stop -rischio
+   string cur   = AccountInfoString(ACCOUNT_CURRENCY);
+   double total = 0.0;
+   ArrayResize(monthRows, months + (months > 0 ? 1 : 0));
    for(int m = 0; m < months; m++)
      {
+      double pnl = monthTp[m] * InpRisk * InpTargetMult - monthSl[m] * InpRisk;
+      total += pnl;
       monthRows[m] = MonthName(monthKey[m] % 100) + " " + IntegerToString(monthKey[m] / 100) + ": "
-                     + IntegerToString(monthTp[m]) + " TP / " + IntegerToString(monthSl[m]) + " Stop";
+                     + IntegerToString(monthTp[m]) + " TP / " + IntegerToString(monthSl[m]) + " Stop = "
+                     + FormatPnl(pnl) + " " + cur;
       //--- il mese piu' vecchio e' incompleto se i giorni mostrati non arrivano al suo inizio
       if(m == months - 1 && found >= InpDays && months > 1)
          monthRows[m] += " (parziale)";
      }
+   if(months > 0)
+      monthRows[months] = "Totale: " + FormatPnl(total) + " " + cur;
 
    if(found > 0)
       DrawPanel(list[0].hi, list[0].lo, list[0].forming, monthRows);
