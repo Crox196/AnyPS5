@@ -3,7 +3,7 @@
 //|  Range Max/Min 16:15-16:30, linee buffer, target 2.5x e size     |
 //+------------------------------------------------------------------+
 #property copyright   "AnyPS5"
-#property version     "1.10"
+#property version     "1.11"
 #property description "RangeBreak - Calcola Max/Min tra 16:15 e 16:30, disegna le linee buffer (+/- 10),"
 #property description "la linea target a 2.5x il range e un box con la size per rischiare 20 USD"
 #property description "(rischio = distanza tra buffer superiore e buffer inferiore)."
@@ -134,7 +134,9 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
      }
    IndicatorSetString(INDICATOR_SHORTNAME, "RangeBreak");
-   Print("RangeBreak v1.10 caricato su ", _Symbol);
+   PrintFormat("RangeBreak v1.11 su %s - giorni %d, colora esito %s, colore TP %s, colore stop %s",
+               _Symbol, InpDays, InpShowResults ? "SI" : "NO",
+               ColorToString(InpColWin, true), ColorToString(InpColLoss, true));
    EventSetTimer(1);
    Update();
    return INIT_SUCCEEDED;
@@ -376,11 +378,11 @@ void DrawDay(const DayData &dd)
    double bufUp, bufDn, tgtUp, tgtDn;
    CalcLevels(hi, lo, bufUp, bufDn, tgtUp, tgtDn);
 
-   //--- esito: rettangolo dal buffer di entrata al target
+   //--- esito: zona dal buffer di entrata al target, da fine range a fine linee
    string resName = tag + "res";
    if(InpShowResults && (dd.res == RES_WIN || dd.res == RES_LOSS))
-      SetRect(resName, dd.tIn, (dd.dir > 0) ? bufUp : bufDn,
-              dd.tOut, (dd.dir > 0) ? tgtUp : tgtDn,
+      SetRect(resName, end, (dd.dir > 0) ? bufUp : bufDn,
+              lineEnd, (dd.dir > 0) ? tgtUp : tgtDn,
               (dd.res == RES_WIN) ? InpColWin : InpColLoss);
    else
       ObjectDelete(0, resName);
