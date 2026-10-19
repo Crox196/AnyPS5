@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "AnyPS5"
 #property version     "1.12"
-#property description "RangeBreak - Calcola Max/Min tra 16:15 e 16:30, disegna le linee buffer (+/- 10),"
+#property description "RangeBreak - Calcola Max/Min tra 16:15 e 16:30, disegna le linee buffer (+/- 15),"
 #property description "la linea target a 2.5x il range e un box con la size per rischiare 20 USD"
 #property description "(rischio = distanza tra buffer superiore e buffer inferiore)."
 #property indicator_chart_window
@@ -40,7 +40,7 @@ input int              InpTimeShift    = 0;             // Sposta gli orari di N
 input string           InpLinesEnd     = "23:59";       // Fine linee (HH:MM)
 
 input group "Buffer"
-input double           InpBuffer       = 10.0;          // Buffer
+input double           InpBuffer       = 15.0;          // Buffer
 input ENUM_BUFFER_UNIT InpBufferUnit   = UNIT_PRICE;    // Unita' del buffer
 
 input group "Target"
