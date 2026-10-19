@@ -62,7 +62,8 @@ input color            InpColHighLow   = clrSilver;     // Colore Max/Min
 input color            InpColBuffer    = clrDodgerBlue; // Colore buffer
 input color            InpColTarget    = clrGold;       // Colore target
 input color            InpColBox       = C'40,40,60';   // Colore rettangolo range
-input int              InpPanelX       = 10;            // Box: distanza X
+input bool             InpPanelRight   = true;          // Box a destra (false = a sinistra)
+input int              InpPanelX       = 10;            // Box: distanza dal bordo
 input int              InpPanelY       = 25;            // Box: distanza Y
 input int              InpFontSize     = 10;            // Box: dimensione font
 input color            InpPanelBg      = C'25,25,35';   // Box: sfondo
@@ -164,6 +165,17 @@ int OnCalculate(const int rates_total,
   {
    Update();
    return rates_total;
+  }
+
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+  {
+   //--- grafico ridimensionato: riposiziona subito il box
+   if(id == CHARTEVENT_CHART_CHANGE)
+     {
+      g_lastCalc = 0;
+      Update();
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -665,7 +677,11 @@ void RenderPanel(const string &lines[], const color &colors[])
       ObjectSetInteger(0, bg, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(0, bg, OBJPROP_HIDDEN, true);
      }
-   ObjectSetInteger(0, bg, OBJPROP_XDISTANCE, InpPanelX);
+   //--- a destra: allineato al bordo destro dell'area del grafico (scala prezzi esclusa)
+   int x0 = InpPanelX;
+   if(InpPanelRight)
+      x0 = MathMax(0, (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS) - width - InpPanelX);
+   ObjectSetInteger(0, bg, OBJPROP_XDISTANCE, x0);
    ObjectSetInteger(0, bg, OBJPROP_YDISTANCE, InpPanelY);
    ObjectSetInteger(0, bg, OBJPROP_XSIZE, width);
    ObjectSetInteger(0, bg, OBJPROP_YSIZE, height);
@@ -684,7 +700,7 @@ void RenderPanel(const string &lines[], const color &colors[])
          ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
          ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
         }
-      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, InpPanelX + pad);
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x0 + pad);
       ObjectSetInteger(0, name, OBJPROP_YDISTANCE, InpPanelY + pad + i * lineH);
       ObjectSetInteger(0, name, OBJPROP_FONTSIZE, InpFontSize);
       ObjectSetInteger(0, name, OBJPROP_COLOR, colors[i]);
