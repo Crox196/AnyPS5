@@ -96,6 +96,8 @@ struct DayData
 
 DayData  g_prev[];            // ultimo stato disegnato, per ridisegnare solo cio' che cambia
 uint     g_lastCalc = 0;
+string   g_panelLines[];      // ultimo contenuto del box
+color    g_panelColors[];
 
 //+------------------------------------------------------------------+
 int ParseHHMM(const string s, const int def)
@@ -170,11 +172,11 @@ int OnCalculate(const int rates_total,
 //+------------------------------------------------------------------+
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
   {
-   //--- grafico ridimensionato: riposiziona subito il box
-   if(id == CHARTEVENT_CHART_CHANGE)
+   //--- grafico ridimensionato: riposiziona subito il box con l'ultimo contenuto
+   if(id == CHARTEVENT_CHART_CHANGE && ArraySize(g_panelLines) > 0)
      {
-      g_lastCalc = 0;
-      Update();
+      RenderPanel(g_panelLines, g_panelColors);
+      ChartRedraw();
      }
   }
 
@@ -659,6 +661,11 @@ void AddRow(string &lines[], color &colors[], const string text, const color clr
 //+------------------------------------------------------------------+
 void RenderPanel(const string &lines[], const color &colors[])
   {
+   ArrayCopy(g_panelLines, lines);
+   ArrayCopy(g_panelColors, colors);
+   ArrayResize(g_panelLines, ArraySize(lines));
+   ArrayResize(g_panelColors, ArraySize(colors));
+
    int rows   = ArraySize(lines);
    int lineH  = (int)MathRound(InpFontSize * 1.9);
    int pad    = 8;
