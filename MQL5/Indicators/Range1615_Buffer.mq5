@@ -276,6 +276,14 @@ bool ComputeDay(const datetime day, const datetime now, DayData &dd)
   }
 
 //+------------------------------------------------------------------+
+string MonthName(const int mon)
+  {
+   static const string names[12] = {"Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+                                     "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"};
+   return (mon >= 1 && mon <= 12) ? names[mon - 1] : "Mese";
+  }
+
+//+------------------------------------------------------------------+
 void PrintResult(const DayData &dd)
   {
    string res = (dd.res == RES_WIN) ? "TP" : (dd.res == RES_LOSS) ? "STOP" :
@@ -352,7 +360,7 @@ void Update()
      }
 
    if(found > 0)
-      DrawPanel(list[0].hi, list[0].lo, list[0].forming, monthTp, monthSl);
+      DrawPanel(list[0].hi, list[0].lo, list[0].forming, MonthName(nowDt.mon), monthTp, monthSl);
    else
       DrawPanelEmpty();
    ChartRedraw();
@@ -523,7 +531,8 @@ int VolumeDigits(const double step)
   }
 
 //+------------------------------------------------------------------+
-void DrawPanel(const double hi, const double lo, const bool forming, const int monthTp, const int monthSl)
+void DrawPanel(const double hi, const double lo, const bool forming,
+               const string month, const int monthTp, const int monthSl)
   {
    double bufUp, bufDn, tgtUp, tgtDn;
    CalcLevels(hi, lo, bufUp, bufDn, tgtUp, tgtDn);
@@ -571,7 +580,7 @@ void DrawPanel(const double hi, const double lo, const bool forming, const int m
    AddRow(lines, colors, "Range: " + DoubleToString(hi - lo, _Digits) + (forming ? " (in formazione)" : ""), InpPanelText);
    AddRow(lines, colors, sizeTxt, sizeClr);
    AddRow(lines, colors, riskTxt, InpPanelText);
-   AddRow(lines, colors, "Mese: " + IntegerToString(monthTp) + " TP / " + IntegerToString(monthSl) + " Stop",
+   AddRow(lines, colors, month + ": " + IntegerToString(monthTp) + " TP / " + IntegerToString(monthSl) + " Stop",
           InpPanelText);
 
    RenderPanel(lines, colors);
