@@ -3,7 +3,7 @@
 //|  Range Max/Min 16:15-16:30, linee buffer, target 2.5x e size     |
 //+------------------------------------------------------------------+
 #property copyright   "AnyPS5"
-#property version     "1.11"
+#property version     "1.12"
 #property description "RangeBreak - Calcola Max/Min tra 16:15 e 16:30, disegna le linee buffer (+/- 10),"
 #property description "la linea target a 2.5x il range e un box con la size per rischiare 20 USD"
 #property description "(rischio = distanza tra buffer superiore e buffer inferiore)."
@@ -134,7 +134,7 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
      }
    IndicatorSetString(INDICATOR_SHORTNAME, "RangeBreak");
-   PrintFormat("RangeBreak v1.11 su %s - giorni %d, colora esito %s, colore TP %s, colore stop %s",
+   PrintFormat("RangeBreak v1.12 su %s - giorni %d, colora esito %s, colore TP %s, colore stop %s",
                _Symbol, InpDays, InpShowResults ? "SI" : "NO",
                ColorToString(InpColWin, true), ColorToString(InpColLoss, true));
    EventSetTimer(1);
@@ -336,8 +336,23 @@ void Update()
    for(int i = 0; i < found; i++)
       g_prev[i] = list[i];
 
+   //--- TP e stop del mese corrente
+   MqlDateTime nowDt, dayDt;
+   TimeToStruct(now, nowDt);
+   int monthTp = 0, monthSl = 0;
+   for(int i = 0; i < found; i++)
+     {
+      TimeToStruct(list[i].day, dayDt);
+      if(dayDt.year != nowDt.year || dayDt.mon != nowDt.mon)
+         continue;
+      if(list[i].res == RES_WIN)
+         monthTp++;
+      else if(list[i].res == RES_LOSS)
+         monthSl++;
+     }
+
    if(found > 0)
-      DrawPanel(list[0].hi, list[0].lo, list[0].forming);
+      DrawPanel(list[0].hi, list[0].lo, list[0].forming, monthTp, monthSl);
    else
       DrawPanelEmpty();
    ChartRedraw();
@@ -378,12 +393,13 @@ void DrawDay(const DayData &dd)
    double bufUp, bufDn, tgtUp, tgtDn;
    CalcLevels(hi, lo, bufUp, bufDn, tgtUp, tgtDn);
 
-   //--- esito: zona dal buffer di entrata al target, da fine range a fine linee
+   //--- esito, da fine range a fine linee: TP = buffer di entrata -> target, stop = tra i 2 buffer
    string resName = tag + "res";
-   if(InpShowResults && (dd.res == RES_WIN || dd.res == RES_LOSS))
+   if(InpShowResults && dd.res == RES_WIN)
       SetRect(resName, end, (dd.dir > 0) ? bufUp : bufDn,
-              lineEnd, (dd.dir > 0) ? tgtUp : tgtDn,
-              (dd.res == RES_WIN) ? InpColWin : InpColLoss);
+              lineEnd, (dd.dir > 0) ? tgtUp : tgtDn, InpColWin);
+   else if(InpShowResults && dd.res == RES_LOSS)
+      SetRect(resName, end, bufUp, lineEnd, bufDn, InpColLoss);
    else
       ObjectDelete(0, resName);
 
@@ -507,7 +523,7 @@ int VolumeDigits(const double step)
   }
 
 //+------------------------------------------------------------------+
-void DrawPanel(const double hi, const double lo, const bool forming)
+void DrawPanel(const double hi, const double lo, const bool forming, const int monthTp, const int monthSl)
   {
    double bufUp, bufDn, tgtUp, tgtDn;
    CalcLevels(hi, lo, bufUp, bufDn, tgtUp, tgtDn);
@@ -555,6 +571,8 @@ void DrawPanel(const double hi, const double lo, const bool forming)
    AddRow(lines, colors, "Range: " + DoubleToString(hi - lo, _Digits) + (forming ? " (in formazione)" : ""), InpPanelText);
    AddRow(lines, colors, sizeTxt, sizeClr);
    AddRow(lines, colors, riskTxt, InpPanelText);
+   AddRow(lines, colors, "Mese: " + IntegerToString(monthTp) + " TP / " + IntegerToString(monthSl) + " Stop",
+          InpPanelText);
 
    RenderPanel(lines, colors);
   }
