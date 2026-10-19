@@ -69,7 +69,7 @@ input color            InpPanelBg      = C'25,25,35';   // Box: sfondo
 input color            InpPanelText    = clrWhite;      // Box: testo
 input color            InpPanelSize    = clrLime;       // Box: colore size
 
-#define PREFIX "R1615_"
+#define PREFIX "RangeBreak_"
 
 int g_startSec = 0;
 int g_endSec   = 0;
@@ -280,6 +280,16 @@ bool ComputeDay(const datetime day, const datetime now, DayData &dd)
   }
 
 //+------------------------------------------------------------------+
+void PrintResult(const DayData &dd)
+  {
+   string res = (dd.res == RES_WIN) ? "TP" : (dd.res == RES_LOSS) ? "STOP" : "nessun breakout";
+   string dir = (dd.dir > 0) ? "LONG " : (dd.dir < 0) ? "SHORT " : "";
+   PrintFormat("RangeBreak %s  Max %s  Min %s  -> %s%s",
+               TimeToString(dd.day, TIME_DATE), DoubleToString(dd.hi, _Digits),
+               DoubleToString(dd.lo, _Digits), dir, res);
+  }
+
+//+------------------------------------------------------------------+
 //| Disegna range e linee per gli ultimi InpDays giorni               |
 //+------------------------------------------------------------------+
 void Update()
@@ -301,6 +311,8 @@ void Update()
          continue;
       ArrayResize(list, found + 1);
       ArrayResize(cached, found + 1);
+      if(!fromCache && dd.done)
+         PrintResult(dd);
       list[found]   = dd;
       cached[found] = fromCache;
       found++;
@@ -384,18 +396,18 @@ void DrawDay(const DayData &dd)
 
    SetRect(tag + "box", start, hi, end, lo, InpColBox);
 
-   SetLine(tag + "hi", start, lineEnd, hi, InpColHighLow, STYLE_SOLID, 1, "Max");
-   SetLine(tag + "lo", start, lineEnd, lo, InpColHighLow, STYLE_SOLID, 1, "Min");
-   SetLine(tag + "bufUp", start, lineEnd, bufUp, InpColBuffer, STYLE_DASH, 2, "Buffer +");
-   SetLine(tag + "bufDn", start, lineEnd, bufDn, InpColBuffer, STYLE_DASH, 2, "Buffer -");
+   SetLine(tag + "hi", start, lineEnd, hi, InpColHighLow, STYLE_SOLID, 1, "Max", true, false);
+   SetLine(tag + "lo", start, lineEnd, lo, InpColHighLow, STYLE_SOLID, 1, "Min", true, true);
+   SetLine(tag + "bufUp", start, lineEnd, bufUp, InpColBuffer, STYLE_DASH, 2, "Buffer +", false, false);
+   SetLine(tag + "bufDn", start, lineEnd, bufDn, InpColBuffer, STYLE_DASH, 2, "Buffer -", false, true);
 
    string tgtName = "Target " + DoubleToString(InpTargetMult, 1) + "x";
    if(InpShowTargetUp)
-      SetLine(tag + "tgtUp", start, lineEnd, tgtUp, InpColTarget, STYLE_DOT, 1, tgtName + " +");
+      SetLine(tag + "tgtUp", start, lineEnd, tgtUp, InpColTarget, STYLE_DOT, 1, tgtName + " +", false, false);
    else
       DeleteLine(tag + "tgtUp");
    if(InpShowTargetDn)
-      SetLine(tag + "tgtDn", start, lineEnd, tgtDn, InpColTarget, STYLE_DOT, 1, tgtName + " -");
+      SetLine(tag + "tgtDn", start, lineEnd, tgtDn, InpColTarget, STYLE_DOT, 1, tgtName + " -", false, true);
    else
       DeleteLine(tag + "tgtDn");
   }
@@ -419,7 +431,8 @@ void SetRect(const string name, const datetime t1, const double p1,
 
 //+------------------------------------------------------------------+
 void SetLine(const string name, const datetime t1, const datetime t2, const double price,
-             const color clr, const ENUM_LINE_STYLE style, const int width, const string text)
+             const color clr, const ENUM_LINE_STYLE style, const int width, const string text,
+             const bool labelAtStart, const bool labelBelow)
   {
    string txt = text + "  " + DoubleToString(price, _Digits);
    if(ObjectFind(0, name) < 0)
@@ -441,14 +454,15 @@ void SetLine(const string name, const datetime t1, const datetime t2, const doub
    if(ObjectFind(0, lbl) < 0)
      {
       ObjectCreate(0, lbl, OBJ_TEXT, 0, t2, price);
-      ObjectSetInteger(0, lbl, OBJPROP_ANCHOR, ANCHOR_RIGHT_LOWER);
       ObjectSetInteger(0, lbl, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(0, lbl, OBJPROP_HIDDEN, true);
       ObjectSetInteger(0, lbl, OBJPROP_FONTSIZE, 8);
      }
    ObjectSetInteger(0, lbl, OBJPROP_COLOR, clr);
    ObjectSetString(0, lbl, OBJPROP_TEXT, txt);
-   ObjectMove(0, lbl, 0, t2, price);
+   //--- Max/Min a sinistra dell'inizio, buffer/target a destra; sotto la linea quelli inferiori
+   ObjectSetInteger(0, lbl, OBJPROP_ANCHOR, labelBelow ? ANCHOR_RIGHT_UPPER : ANCHOR_RIGHT_LOWER);
+   ObjectMove(0, lbl, 0, labelAtStart ? t1 : t2, price);
   }
 
 //+------------------------------------------------------------------+
