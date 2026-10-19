@@ -54,7 +54,7 @@ input group "Rischio"
 input double           InpRisk         = 20.0;          // Rischio per trade (valuta del conto)
 
 input group "Grafica"
-input int              InpDays         = 1;             // Giorni da mostrare
+input int              InpDays         = 5;             // Giorni da mostrare (oggi + precedenti)
 input color            InpColHighLow   = clrSilver;     // Colore Max/Min
 input color            InpColBuffer    = clrDodgerBlue; // Colore buffer
 input color            InpColTarget    = clrGold;       // Colore target
@@ -366,7 +366,6 @@ void DrawPanel(const datetime day, const double hi, const double lo, const bool 
    double bufUp, bufDn, tgtUp, tgtDn;
    CalcLevels(hi, lo, bufUp, bufDn, tgtUp, tgtDn);
 
-   double stopDist   = bufUp - bufDn;
    double lossPerLot = LossPerLot(bufUp, bufDn);
    double volMin     = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double volMax     = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
@@ -380,8 +379,8 @@ void DrawPanel(const datetime day, const double hi, const double lo, const bool 
    color  sizeClr = InpPanelSize;
    if(lossPerLot <= 0.0)
      {
-      sizeTxt = "SIZE: n.d. (dati simbolo mancanti)";
-      riskTxt = "";
+      sizeTxt = "Size: n.d. (dati simbolo mancanti)";
+      riskTxt = "Rischio effettivo: n.d.";
       sizeClr = clrOrangeRed;
      }
    else
@@ -392,35 +391,23 @@ void DrawPanel(const datetime day, const double hi, const double lo, const bool 
          lots = MathMin(lots, volMax);
       if(lots < volMin)
         {
-         sizeTxt = "SIZE: < min (" + DoubleToString(volMin, volDigits) + " lotti)";
-         riskTxt = "Rischio a lotto min: " + DoubleToString(volMin * lossPerLot, 2) + " " + cur;
+         sizeTxt = "Size: < min (" + DoubleToString(volMin, volDigits) + " lotti)";
+         riskTxt = "Rischio effettivo: " + DoubleToString(volMin * lossPerLot, 2) + " " + cur + " (lotto min)";
          sizeClr = clrOrangeRed;
         }
       else
         {
-         sizeTxt = "SIZE: " + DoubleToString(lots, volDigits) + " lotti";
+         sizeTxt = "Size: " + DoubleToString(lots, volDigits) + " lotti";
          riskTxt = "Rischio effettivo: " + DoubleToString(lots * lossPerLot, 2) + " " + cur;
         }
      }
 
    string lines[];
    color  colors[];
-   string tgt = DoubleToString(InpTargetMult, 1) + "x";
-   AddRow(lines, colors, "RANGE " + InpStart + "-" + InpEnd + "  " + TimeToString(day, TIME_DATE)
-          + (forming ? "  (in formazione)" : ""), clrGold);
-   AddRow(lines, colors, "Max: " + DoubleToString(hi, _Digits) + "   Min: " + DoubleToString(lo, _Digits), InpPanelText);
-   AddRow(lines, colors, "Range: " + DoubleToString(hi - lo, _Digits), InpPanelText);
-   AddRow(lines, colors, "Buffer +: " + DoubleToString(bufUp, _Digits), InpColBuffer);
-   AddRow(lines, colors, "Buffer -: " + DoubleToString(bufDn, _Digits), InpColBuffer);
-   AddRow(lines, colors, "Target " + tgt + " +: " + DoubleToString(tgtUp, _Digits), InpColTarget);
-   AddRow(lines, colors, "Target " + tgt + " -: " + DoubleToString(tgtDn, _Digits), InpColTarget);
-   AddRow(lines, colors, "Stop (buffer-buffer): " + DoubleToString(stopDist, _Digits), InpPanelText);
    AddRow(lines, colors, "Rischio: " + DoubleToString(InpRisk, 2) + " " + cur, InpPanelText);
+   AddRow(lines, colors, "Range: " + DoubleToString(hi - lo, _Digits) + (forming ? " (in formazione)" : ""), InpPanelText);
    AddRow(lines, colors, sizeTxt, sizeClr);
-   if(riskTxt != "")
-      AddRow(lines, colors, riskTxt, InpPanelText);
-   if(cur != "USD")
-      AddRow(lines, colors, "Attenzione: conto in " + cur + ", non USD", clrOrangeRed);
+   AddRow(lines, colors, riskTxt, InpPanelText);
 
    RenderPanel(lines, colors);
   }
@@ -430,9 +417,8 @@ void DrawPanelEmpty()
   {
    string lines[];
    color  colors[];
-   AddRow(lines, colors, "RANGE " + InpStart + "-" + InpEnd, clrGold);
-   AddRow(lines, colors, "Nessun dato M1 per il range", InpPanelText);
-   AddRow(lines, colors, "(attendi o controlla orari/fuso server)", InpPanelText);
+   AddRow(lines, colors, "Rischio: " + DoubleToString(InpRisk, 2) + " " + AccountInfoString(ACCOUNT_CURRENCY), InpPanelText);
+   AddRow(lines, colors, "Range: n.d. (nessun dato M1)", InpPanelText);
    RenderPanel(lines, colors);
   }
 
