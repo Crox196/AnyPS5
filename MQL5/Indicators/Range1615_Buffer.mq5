@@ -376,6 +376,10 @@ void Update()
       else if(list[i].res == RES_LOSS)
          monthSl[months - 1]++;
      }
+   //--- il mese piu' vecchio e' incompleto se i giorni mostrati non arrivano al suo inizio: escluso
+   if(found >= InpDays && months > 1)
+      months--;
+
    //--- risultato: ogni TP vale rischio * moltiplicatore, ogni stop -rischio
    string cur   = AccountInfoString(ACCOUNT_CURRENCY);
    double total = 0.0;
@@ -387,9 +391,6 @@ void Update()
       monthRows[m] = MonthName(monthKey[m] % 100) + " " + IntegerToString(monthKey[m] / 100) + ": "
                      + IntegerToString(monthTp[m]) + " TP / " + IntegerToString(monthSl[m]) + " Stop = "
                      + FormatPnl(pnl) + " " + cur;
-      //--- il mese piu' vecchio e' incompleto se i giorni mostrati non arrivano al suo inizio
-      if(m == months - 1 && found >= InpDays && months > 1)
-         monthRows[m] += " (parziale)";
      }
    if(months > 0)
       monthRows[months] = "Totale: " + FormatPnl(total) + " " + cur;
