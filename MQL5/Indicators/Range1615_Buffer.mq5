@@ -600,6 +600,8 @@ void DrawPanel(const double hi, const double lo, const bool forming, const strin
    AddRow(lines, colors, "Range: " + DoubleToString(hi - lo, _Digits) + (forming ? " (in formazione)" : ""), InpPanelText);
    AddRow(lines, colors, sizeTxt, sizeClr);
    AddRow(lines, colors, riskTxt, InpPanelText);
+   AddRow(lines, colors, " ", InpPanelText);
+   AddRow(lines, colors, "BACKTEST:", clrGold);
    for(int m = 0; m < ArraySize(monthRows); m++)
       AddRow(lines, colors, monthRows[m], InpPanelText);
 
